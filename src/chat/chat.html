@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Assistant Chat</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg-primary: var(--vscode-editor-background);
+      --bg-secondary: var(--vscode-sideBar-background);
+      --bg-input: var(--vscode-input-background);
+      --text-primary: var(--vscode-foreground);
+      --text-secondary: var(--vscode-descriptionForeground);
+      --border-color: var(--vscode-panel-border);
+      --accent-color: var(--vscode-button-background);
+      --accent-hover: var(--vscode-button-hoverBackground);
+      --accent-text: var(--vscode-button-foreground);
+      --user-bubble: var(--vscode-button-background);
+      --ai-bubble: var(--vscode-editor-inactiveSelectionBackground);
+      --code-bg: var(--vscode-textCodeBlock-background);
+      --error-color: var(--vscode-errorForeground);
+    }
+    body {
+      font-family: var(--vscode-font-family);
+      font-size: var(--vscode-font-size);
+      color: var(--text-primary);
+      background: var(--bg-primary);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .header {
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border-color);
+      background: var(--bg-secondary);
+      flex-shrink: 0;
+    }
+    .header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .header-title {
+      font-weight: 600;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    /* 模式切换 Tab */
+    .mode-tabs {
+      display: flex;
+      background: var(--bg-input);
+      border-radius: 6px;
+      padding: 2px;
+      gap: 2px;
+    }
+    .mode-tab {
+      flex: 1;
+      padding: 5px 10px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 500;
+      background: transparent;
+      color: var(--text-secondary);
+      transition: all 0.15s;
+      white-space: nowrap;
+      text-align: center;
+      font-family: var(--vscode-font-family);
+    }
+    .mode-tab:hover {
+      color: var(--text-primary);
+    }
+    .mode-tab.active {
+      background: var(--accent-color);
+      color: var(--accent-text);
+    }
+    .icon-btn {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 4px;
+      font-size: 16px;
+    }
+    .icon-btn:hover {
+      background: var(--ai-bubble);
+      color: var(--text-primary);
+    }
+    .messages-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .messages-container::-webkit-scrollbar { width: 6px; }
+    .messages-container::-webkit-scrollbar-thumb {
+      background: var(--border-color);
+      border-radius: 3px;
+    }
+    .empty-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-secondary);
+      text-align: center;
+      padding: 32px;
+    }
+    .empty-state .icon { font-size: 48px; margin-bottom: 16px; opacity: 0.5; }
+    .empty-state h3 { font-size: 16px; margin-bottom: 8px; color: var(--text-primary); }
+    .empty-state p { font-size: 13px; margin-bottom: 4px; }
+    .empty-state .shortcuts {
+      margin-top: 16px;
+      padding: 12px 16px;
+      background: var(--bg-secondary);
+      border-radius: 8px;
+      text-align: left;
+      font-size: 12px;
+    }
+    .empty-state .shortcuts kbd {
+      background: var(--bg-input);
+      padding: 2px 6px;
+      border-radius: 3px;
+      border: 1px solid var(--border-color);
+      font-family: monospace;
+      font-size: 11px;
+    }
+    .message { display: flex; gap: 10px; max-width: 100%; animation: fadeIn 0.2s ease; }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .message.user { flex-direction: row-reverse; }
+    .message-avatar {
+      width: 28px; height: 28px; border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; flex-shrink: 0;
+    }
+    .message.user .message-avatar { background: var(--accent-color); color: var(--accent-text); }
+    .message.assistant .message-avatar { background: var(--ai-bubble); color: var(--text-primary); }
+    .message-content {
+      max-width: calc(100% - 50px); padding: 10px 14px; border-radius: 12px;
+      font-size: 13px; line-height: 1.6; word-wrap: break-word; overflow-wrap: break-word;
+    }
+    .message.user .message-content {
+      background: var(--user-bubble); color: var(--accent-text); border-bottom-right-radius: 4px;
+    }
+    .message.assistant .message-content {
+      background: var(--ai-bubble); color: var(--text-primary); border-bottom-left-radius: 4px;
+    }
+    .message-content pre {
+      background: var(--code-bg); border-radius: 6px; padding: 12px; margin: 8px 0;
+      overflow-x: auto; font-size: 12px; line-height: 1.5;
+    }
+    .message-content code {
+      font-family: var(--vscode-editor-font-family); font-size: 12px;
+    }
+    .message-content p { margin: 4px 0; }
+    .message-content ul, .message-content ol { margin: 4px 0; padding-left: 20px; }
+    .message-content li { margin: 2px 0; }
+    .message-content strong { font-weight: 600; }
+    .message-content h1, .message-content h2, .message-content h3, .message-content h4 {
+      margin: 8px 0 4px 0; font-weight: 600;
+    }
+    .message-content h1 { font-size: 16px; }
+    .message-content h2 { font-size: 15px; }
+    .message-content h3 { font-size: 14px; }
+    .message-content blockquote {
+      border-left: 3px solid var(--accent-color); padding-left: 12px;
+      margin: 8px 0; color: var(--text-secondary);
+    }
+    .code-block-header {
+      display: flex; justify-content: space-between; align-items: center;
+      background: var(--vscode-textBlockQuote-background);
+      padding: 4px 12px; border-radius: 6px 6px 0 0;
+      font-size: 11px; color: var(--text-secondary); margin-top: 8px;
+    }
+    .code-block-header + pre { margin-top: 0; border-radius: 0 0 6px 6px; }
+    .copy-btn {
+      background: none; border: none; color: var(--text-secondary);
+      cursor: pointer; font-size: 12px; padding: 2px 6px; border-radius: 3px;
+    }
+    .copy-btn:hover { background: var(--ai-bubble); color: var(--text-primary); }
+    .input-container {
+      padding: 12px 16px; border-top: 1px solid var(--border-color);
+      background: var(--bg-secondary); flex-shrink: 0;
+    }
+    .file-attach-area {
+      margin-bottom: 6px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+    .file-attach-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: var(--accent-color);
+      color: var(--accent-text);
+      padding: 3px 6px 3px 8px;
+      border-radius: 5px;
+      font-size: 11px;
+      max-width: 100%;
+    }
+    .file-attach-icon { font-size: 11px; flex-shrink: 0; }
+    .file-attach-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 180px;
+    }
+    .file-attach-remove {
+      background: transparent;
+      border: none;
+      color: var(--accent-text);
+      cursor: pointer;
+      font-size: 10px;
+      padding: 0 2px;
+      opacity: 0.7;
+      flex-shrink: 0;
+      line-height: 1;
+      border-radius: 3px;
+    }
+    .file-attach-remove:hover { opacity: 1; background: rgba(255,255,255,0.2); }
+    .input-wrapper { display: flex; gap: 8px; align-items: flex-end; }
+    .input-field {
+      flex: 1; background: var(--bg-input); color: var(--text-primary);
+      border: 1px solid var(--border-color); border-radius: 8px;
+      padding: 10px 14px; font-family: var(--vscode-font-family);
+      font-size: var(--vscode-font-size); resize: none;
+      min-height: 40px; max-height: 150px; outline: none; line-height: 1.4;
+    }
+    .input-field:focus { border-color: var(--accent-color); }
+    .input-field::placeholder { color: var(--text-secondary); }
+    .send-btn {
+      background: var(--accent-color); color: var(--accent-text);
+      border: none; border-radius: 8px; padding: 8px 16px;
+      cursor: pointer; font-size: 13px; font-weight: 500;
+      flex-shrink: 0; transition: opacity 0.2s;
+    }
+    .send-btn:hover { background: var(--accent-hover); }
+    .send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .input-actions {
+      display: flex; flex-direction: column; gap: 4px; align-items: stretch;
+    }
+    .attach-btn {
+      background: var(--bg-input); color: var(--text-secondary);
+      border: 1px solid var(--border-color); border-radius: 6px;
+      padding: 4px 8px; cursor: pointer; font-size: 14px;
+      transition: all 0.2s;
+    }
+    .attach-btn:hover { background: var(--ai-bubble); color: var(--text-primary); }
+    .attach-btn.has-file {
+      background: var(--accent-color); color: var(--accent-text);
+      border-color: var(--accent-color);
+    }
+    .typing-indicator { display: flex; gap: 4px; padding: 4px 0; }
+    .typing-indicator span {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--text-secondary); animation: typing 1.4s infinite;
+    }
+    .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+    .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes typing {
+      0%, 60%, 100% { opacity: 0.3; transform: scale(0.8); }
+      30% { opacity: 1; transform: scale(1); }
+    }
+    .error-message {
+      background: var(--vscode-inputValidation-errorBackground);
+      color: var(--vscode-inputValidation-errorForeground);
+      border: 1px solid var(--vscode-inputValidation-errorBorder);
+      border-radius: 6px; padding: 8px 12px; margin-bottom: 8px; font-size: 12px;
+    }
+    .status-bar {
+      padding: 4px 16px; background: var(--bg-secondary);
+      border-top: 1px solid var(--border-color);
+      font-size: 11px; color: var(--text-secondary);
+      text-align: center; flex-shrink: 0;
+    }
+    .status-bar .dot {
+      display: inline-block; width: 6px; height: 6px;
+      border-radius: 50%; margin-right: 6px;
+    }
+    .status-bar .dot.connected { background: #4caf50; }
+    .status-bar .dot.disconnected { background: #f44336; }
+    .status-bar .dot.loading { background: #ff9800; animation: pulse 1s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+    /* ====== 设置面板 / 模态层 ====== */
+    .settings-overlay {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.5); z-index: 100;
+      display: flex; align-items: flex-start; justify-content: center;
+      padding-top: 20px;
+    }
+    .settings-overlay.hidden { display: none; }
+    .settings-panel {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      width: calc(100% - 24px); max-width: 420px;
+      max-height: calc(100vh - 40px);
+      display: flex; flex-direction: column;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+    .settings-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .settings-header h3 {
+      font-size: 14px; font-weight: 600;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .settings-close {
+      background: none; border: none;
+      color: var(--text-secondary); cursor: pointer;
+      font-size: 18px; padding: 2px 6px; border-radius: 4px;
+    }
+    .settings-close:hover { background: var(--ai-bubble); color: var(--text-primary); }
+    /* 标签栏 */
+    .settings-tabs {
+      display: flex; border-bottom: 1px solid var(--border-color);
+      padding: 0 12px; gap: 0; overflow-x: auto;
+    }
+    .settings-tab {
+      background: none; border: none; border-bottom: 2px solid transparent;
+      color: var(--text-secondary); cursor: pointer;
+      font-size: 12px; padding: 10px 14px 8px;
+      white-space: nowrap; transition: color 0.15s, border-color 0.15s;
+    }
+    .settings-tab:hover { color: var(--text-primary); }
+    .settings-tab.active {
+      color: var(--accent-color); border-bottom-color: var(--accent-color);
+      font-weight: 600;
+    }
+    .settings-body {
+      flex: 1; overflow-y: auto; padding: 14px 16px;
+      display: flex; flex-direction: column; gap: 12px;
+    }
+    .settings-body::-webkit-scrollbar { width: 4px; }
+    .settings-body::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 2px; }
+    .settings-tab-page { display: none; flex-direction: column; gap: 12px; }
+    .settings-tab-page.active { display: flex; }
+    .settings-field { display: flex; flex-direction: column; gap: 4px; }
+    .settings-section-title {
+      font-size: 11px; font-weight: 600; color: var(--vscode-textLink-foreground);
+      margin-top: 2px; margin-bottom: 2px;
+      text-transform: none; letter-spacing: 0.3px;
+    }
+    /* SKILL 列表 */
+    .skill-list { display: flex; flex-direction: column; gap: 8px; }
+    .skill-item {
+      background: var(--bg-input);
+      border: 1px solid var(--border-color);
+      border-radius: 8px; padding: 10px 12px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .skill-item.disabled { opacity: 0.55; }
+    .skill-info { flex: 1; min-width: 0; }
+    .skill-name {
+      font-size: 13px; font-weight: 600;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .skill-content-preview {
+      font-size: 11px; color: var(--text-secondary);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      margin-top: 2px;
+    }
+    .skill-toggle {
+      width: 36px; height: 20px; border-radius: 10px; border: none;
+      cursor: pointer; position: relative; transition: background 0.2s;
+      flex-shrink: 0;
+    }
+    .skill-toggle.on { background: var(--accent-color); }
+    .skill-toggle.off { background: var(--border-color); }
+    .skill-toggle::after {
+      content: ''; position: absolute; top: 2px; width: 16px; height: 16px;
+      border-radius: 50%; background: white; transition: left 0.2s;
+    }
+    .skill-toggle.on::after { left: 18px; }
+    .skill-toggle.off::after { left: 2px; }
+    .skill-remove {
+      background: none; border: none; color: var(--text-secondary);
+      cursor: pointer; font-size: 16px; padding: 2px 6px; border-radius: 4px;
+      flex-shrink: 0;
+    }
+    .skill-remove:hover { color: #e74c3c; background: rgba(231,76,60,0.1); }
+    .skill-import-btn {
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+      width: 100%; padding: 10px; border: 2px dashed var(--border-color);
+      border-radius: 8px; background: none; color: var(--text-secondary);
+      cursor: pointer; font-size: 12px; transition: border-color 0.2s, color 0.2s;
+    }
+    .skill-import-btn:hover { border-color: var(--accent-color); color: var(--accent-color); }
+    .skill-empty {
+      text-align: center; color: var(--text-secondary);
+      font-size: 12px; padding: 20px 0;
+    }
+    .settings-label {
+      font-size: 11px; font-weight: 500; color: var(--text-secondary);
+      text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .settings-input {
+      background: var(--bg-input);
+      color: var(--text-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 6px; padding: 7px 10px;
+      font-size: 12px; font-family: var(--vscode-font-family);
+      outline: none;
+    }
+    .settings-input:focus { border-color: var(--accent-color); }
+    .settings-textarea {
+      resize: vertical; min-height: 80px;
+      line-height: 1.5;
+    }
+    .settings-footer {
+      padding: 12px 16px;
+      border-top: 1px solid var(--border-color);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .settings-reset {
+      background: none; border: none; color: var(--text-secondary);
+      cursor: pointer; font-size: 11px; text-decoration: underline;
+    }
+    .settings-reset:hover { color: var(--text-primary); }
+    .settings-save {
+      background: var(--accent-color); color: var(--accent-text);
+      border: none; border-radius: 6px; padding: 7px 20px;
+      cursor: pointer; font-size: 12px; font-weight: 500;
+    }
+    .settings-save:hover { background: var(--accent-hover); }
+    .settings-save:disabled { opacity: 0.4; cursor: default; }
+    .settings-success {
+      background: var(--vscode-inputValidation-infoBackground);
+      color: var(--vscode-inputValidation-infoForeground);
+      border: 1px solid var(--vscode-inputValidation-infoBorder);
+      border-radius: 6px; padding: 6px 10px; font-size: 11px;
+      text-align: center;
+    }
+
+    /* ====== 审批卡片 ====== */
+    .approval-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px; padding: 12px 14px;
+      margin-top: 8px; animation: fadeIn 0.2s;
+    }
+    .approval-title {
+      font-size: 13px; font-weight: 600; margin-bottom: 8px;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .approval-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+    .approval-item {
+      padding: 8px 10px; border-radius: 6px; font-size: 12px;
+      background: var(--bg-input); white-space: pre-wrap;
+      font-family: var(--vscode-editor-font-family); line-height: 1.5;
+    }
+    .approval-item.dangerous {
+      border: 1px solid var(--vscode-inputValidation-errorBorder);
+      background: var(--vscode-inputValidation-errorBackground);
+    }
+    .approval-warning {
+      font-size: 11px; color: var(--vscode-errorForeground);
+      margin-bottom: 8px; display: flex; align-items: center; gap: 4px;
+    }
+    .approval-actions { display: flex; gap: 6px; justify-content: flex-end; }
+    .approval-approve {
+      background: var(--accent-color); color: var(--accent-text);
+      border: none; border-radius: 5px; padding: 6px 16px;
+      cursor: pointer; font-size: 12px; font-weight: 500;
+    }
+    .approval-deny {
+      background: var(--bg-input); color: var(--text-primary);
+      border: 1px solid var(--border-color); border-radius: 5px;
+      padding: 6px 16px; cursor: pointer; font-size: 12px;
+    }
+    .approval-approve:hover { background: var(--accent-hover); }
+    .approval-deny:hover { background: var(--ai-bubble); }
+
+    /* ====== 可展开结果卡片 ====== */
+    .expandable-result {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      margin-bottom: 2px;
+      animation: fadeIn 0.2s;
+    }
+    .expandable-header {
+      display: flex; align-items: flex-start; gap: 6px;
+      padding: 8px 12px; cursor: pointer;
+      user-select: none; font-size: 12px; line-height: 1.5;
+      transition: background 0.1s;
+    }
+    .expandable-header:hover { background: var(--ai-bubble); }
+    .expandable-arrow {
+      font-size: 10px; color: var(--text-secondary);
+      flex-shrink: 0; margin-top: 2px;
+    }
+    .expandable-summary { flex: 1; }
+    .expandable-summary p { margin: 0 !important; }
+    .expandable-body {
+      border-top: 1px solid var(--border-color);
+      padding: 10px 14px; font-size: 12px;
+      line-height: 1.6;
+      max-height: 480px;
+      overflow-y: auto;
+    }
+    .expandable-body::-webkit-scrollbar { width: 4px; }
+    .expandable-body::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 2px; }
+    .expandable-body pre {
+      background: var(--code-bg); border-radius: 6px;
+      padding: 10px; margin: 6px 0; overflow-x: auto;
+      font-size: 11px; line-height: 1.5;
+    }
+    .expandable-body code {
+      font-family: var(--vscode-editor-font-family); font-size: 11px;
+    }
+    .expandable-body p { margin: 4px 0; }
+    .expandable-body h4 { font-size: 12px; margin: 8px 0 4px; }
+    .hidden { display: none; }
+
+    /* ====== 消息气泡视觉折叠：超过高度自动收起 ====== */
+    .message.assistant {
+      position: relative;
+    }
+    .message.assistant .message-content.collapsed {
+      max-height: 420px; overflow: hidden;
+      position: relative;
+    }
+    .message.assistant .message-content.collapsed::after {
+      content: '';
+      position: absolute; bottom: 0; left: 0; right: 0;
+      height: 40px;
+      background: linear-gradient(transparent, var(--ai-bubble));
+      pointer-events: none;
+    }
+    .message.assistant .message-content.expanded {
+      max-height: 65vh; overflow-y: auto;
+    }
+    .message.assistant .message-content.expanded::-webkit-scrollbar { width: 4px; }
+    .message.assistant .message-content.expanded::-webkit-scrollbar-thumb {
+      background: var(--border-color); border-radius: 2px;
+    }
+    .message-collapse-toggle {
+      display: none;
+      position: absolute; bottom: 6px; right: 8px; z-index: 2;
+      font-size: 11px;
+      background: var(--ai-bubble); color: var(--accent-color);
+      border: 1px solid var(--border-color);
+      border-radius: 10px; padding: 1px 8px; cursor: pointer;
+      font-family: var(--vscode-font-family);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .message-collapse-toggle.visible { display: inline-block; }
+    .message-collapse-toggle:hover {
+      color: var(--text-primary);
+      border-color: var(--accent-color);
+      background: var(--bg-input);
+    }
+    .message-tempfile-link {
+      position: absolute; bottom: 8px; left: 10px; z-index: 2;
+      font-size: 10px; color: var(--text-secondary);
+      display: none; cursor: default;
+    }
+    .message-tempfile-link.visible { display: inline-block; }
+
+    /* ====== 回滚按钮（状态栏旁） ====== */
+    .rollback-btn {
+      background: var(--vscode-inputValidation-warningBackground);
+      color: var(--vscode-inputValidation-warningForeground);
+      border: 1px solid var(--vscode-inputValidation-warningBorder);
+      border-radius: 4px; padding: 2px 8px; cursor: pointer;
+      font-size: 11px; margin-left: 8px;
+    }
+    .rollback-btn:hover { opacity: 0.8; }
+    .rollback-btn:disabled { opacity: 0.4; cursor: default; }
+
+    /* ====== 编辑模式切换标签 ====== */
+    .edit-mode-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 2px 7px; border-radius: 4px;
+      font-size: 10px; font-weight: 500; cursor: pointer;
+      margin-left: 8px; transition: all 0.15s;
+    }
+    .edit-mode-badge.normal {
+      background: var(--vscode-inputValidation-infoBackground);
+      color: var(--vscode-inputValidation-infoForeground);
+      border: 1px solid var(--vscode-inputValidation-infoBorder);
+    }
+    .edit-mode-badge.fast {
+      background: var(--vscode-inputValidation-warningBackground);
+      color: var(--vscode-inputValidation-warningForeground);
+      border: 1px solid var(--vscode-inputValidation-warningBorder);
+    }
+
+    /* ====== 清除确认弹窗 ====== */
+    .confirm-overlay {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.55); z-index: 200;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .confirm-overlay.hidden { display: none; }
+    .confirm-dialog {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 10px; padding: 20px 22px;
+      width: calc(100% - 32px); max-width: 360px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    }
+    .confirm-dialog h3 {
+      font-size: 14px; margin-bottom: 12px;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .confirm-dialog p {
+      font-size: 12px; color: var(--text-secondary);
+      margin-bottom: 10px; line-height: 1.5;
+    }
+    .confirm-temp-dir {
+      font-size: 10px; color: var(--text-secondary);
+      margin-top: 4px; word-break: break-all;
+    }
+    .confirm-actions {
+      display: flex; gap: 8px; justify-content: flex-end;
+      margin-top: 16px;
+    }
+    .confirm-cancel {
+      background: var(--bg-input); color: var(--text-primary);
+      border: 1px solid var(--border-color); border-radius: 6px;
+      padding: 6px 16px; cursor: pointer; font-size: 12px;
+    }
+    .confirm-delete {
+      background: var(--vscode-inputValidation-errorBackground);
+      color: var(--vscode-inputValidation-errorForeground);
+      border: 1px solid var(--vscode-inputValidation-errorBorder);
+      border-radius: 6px; padding: 6px 16px;
+      cursor: pointer; font-size: 12px; font-weight: 500;
+    }
+    .confirm-cancel:hover { background: var(--ai-bubble); }
+    .confirm-delete:hover { opacity: 0.85; }
+
+    /* ====== Agent 操作栏（暂停/停止） ====== */
+    .agent-action-bar {
+      display: none;
+      justify-content: center;
+      gap: 6px;
+      padding: 4px 0 8px;
+      border-top: 1px solid var(--border-color);
+    }
+    .agent-action-bar.visible { display: flex; }
+    .agent-action-btn {
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      padding: 3px 12px;
+      cursor: pointer;
+      font-size: 11px;
+      font-family: var(--vscode-font-family);
+      background: var(--bg-input);
+      color: var(--text-primary);
+      transition: all 0.12s;
+    }
+    .agent-action-btn:hover {
+      border-color: var(--accent-color);
+      background: var(--ai-bubble);
+    }
+    .agent-action-btn.stop {
+      background: var(--vscode-inputValidation-errorBackground);
+      color: var(--vscode-inputValidation-errorForeground);
+      border-color: var(--vscode-inputValidation-errorBorder);
+    }
+    .agent-action-btn.resume {
+      background: var(--accent-color);
+      color: var(--accent-text);
+      border-color: var(--accent-color);
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-row">
+      <div class="header-title"><span>🤖</span> AI 对话助手
+        <span class="edit-mode-badge normal" id="editModeBadge" title="点击切换编辑模式">一般</span>
+      </div>
+      <div class="header-actions">
+        <button class="icon-btn" id="settingsBtn" title="插件设置">⚙️</button>
+        <button class="icon-btn" id="clearBtn" title="清空当前模式对话">🗑️</button>
+      </div>
+    </div>
+    <div class="mode-tabs">
+      <button class="mode-tab active" id="modeAssistant" title="每次提问独立分析，不保留上下文">🤖 Assistant</button>
+      <button class="mode-tab" id="modeAgent" title="保留完整对话历史，支持追问与工具调用">🧠 Agent</button>
+    </div>
+  </div>
+
+  <div class="messages-container" id="messagesContainer">
+    <div class="empty-state" id="emptyState">
+      <div class="icon" id="emptyIcon">💬</div>
+      <h3 id="emptyTitle">开始对话</h3>
+      <p id="emptyDesc">在下方输入问题，AI 助手将为你解答</p>
+      <div class="shortcuts">
+        <p><kbd>Enter</kbd> 发送消息</p>
+        <p><kbd>Shift + Enter</kbd> 换行</p>
+        <p>使用顶部 Tab 切换 Assistant / Agent 模式</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="errorContainer"></div>
+
+  <div class="input-container">
+    <!-- 文件附件区域（多文件标签列表） -->
+    <div class="file-attach-area" id="fileAttachArea" style="display:none;">
+    </div>
+    <div class="input-wrapper">
+      <textarea class="input-field" id="inputField" placeholder="输入你的问题..." rows="1"></textarea>
+      <div class="input-actions">
+        <button class="attach-btn" id="attachBtn" title="附加当前编辑器文件">📎</button>
+        <button class="send-btn" id="sendBtn" disabled>发送</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="status-bar">
+    <span class="dot disconnected" id="statusDot"></span>
+    <span id="statusText">未配置 API Key</span>
+    <button class="rollback-btn" id="rollbackBtn" disabled title="回滚 Agent 本次所有修改">↩ 回滚</button>
+  </div>
+
+  <!-- Agent 操作栏（暂停/继续/停止） -->
+  <div class="agent-action-bar" id="agentActionBar">
+    <button class="agent-action-btn resume" id="agentResumeBtn">▶ 继续</button>
+    <button class="agent-action-btn" id="agentPauseBtn">⏸ 暂停</button>
+    <button class="agent-action-btn stop" id="agentStopBtn">⏹ 停止</button>
+  </div>
+
+  <!-- 审批卡片容器 -->
+  <div id="approvalContainer"></div>
+
+  <!-- ======== 清除确认弹窗 ======== -->
+  <div class="confirm-overlay hidden" id="confirmOverlay">
+    <div class="confirm-dialog">
+      <h3>🗑️ 确认清除</h3>
+      <p>将清除当前模式下所有对话历史。此操作不可撤销。</p>
+      <div id="confirmTempCount"></div>
+      <div id="confirmTempList"></div>
+      <div class="confirm-actions">
+        <button class="confirm-cancel" id="confirmCancel">取消</button>
+        <button class="confirm-delete" id="confirmDelete">确认清除</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======== 设置面板（模态层） ======== -->
+  <div class="settings-overlay hidden" id="settingsOverlay">
+    <div class="settings-panel">
+      <div class="settings-header">
+        <h3>⚙️ 插件设置</h3>
+        <button class="settings-close" id="settingsClose">✕</button>
+      </div>
+      <div class="settings-tabs">
+        <button class="settings-tab active" data-page="page-api">🔗 API</button>
+        <button class="settings-tab" data-page="page-model">🤖 模型</button>
+        <button class="settings-tab" data-page="page-completion">⌨️ 补全</button>
+        <button class="settings-tab" data-page="page-agent">🦾 Agent</button>
+        <button class="settings-tab" data-page="page-system">📝 系统</button>
+        <button class="settings-tab" data-page="page-skills">🧠 Skills</button>
+      </div>
+      <div class="settings-body">
+        <div id="settingsMessages"></div>
+        <!-- 第1页：API -->
+        <div class="settings-tab-page active" id="page-api">
+          <div class="settings-section-title">对话 API</div>
+          <div class="settings-field">
+            <label class="settings-label">Base URL</label>
+            <input class="settings-input" id="setApiBaseUrl" type="text" placeholder="http://localhost:8000/v1">
+          </div>
+          <div class="settings-field">
+            <label class="settings-label">API Key</label>
+            <input class="settings-input" id="setApiKey" type="password" placeholder="内部模型留空">
+          </div>
+          <div class="settings-section-title">补全 API（留空则复用对话 API）</div>
+          <div class="settings-field">
+            <label class="settings-label">Base URL</label>
+            <input class="settings-input" id="setCompletionApiBaseUrl" type="text" placeholder="留空使用对话 API">
+          </div>
+          <div class="settings-field">
+            <label class="settings-label">API Key</label>
+            <input class="settings-input" id="setCompletionApiKey" type="password" placeholder="留空使用对话 Key">
+          </div>
+        </div>
+        <!-- 第2页：模型 -->
+        <div class="settings-tab-page" id="page-model">
+          <div class="settings-field">
+            <label class="settings-label">对话模型</label>
+            <input class="settings-input" id="setChatModel" type="text" placeholder="MiniMax-M2.5-test">
+          </div>
+          <div class="settings-field">
+            <label class="settings-label">代码补全模型</label>
+            <input class="settings-input" id="setCompletionModel" type="text" placeholder="MiniMax-M2.5-test">
+          </div>
+          <div class="settings-section-title">思考参数（补全始终关闭，对话可自选开/关）</div>
+          <div class="settings-field">
+            <label class="settings-label">对话格式</label>
+            <select class="settings-input" id="setChatThinkingFormat">
+              <option value="minimax">MiniMax / OpenAI 系</option>
+              <option value="qwen">Qwen3</option>
+              <option value="ollama">Ollama</option>
+              <option value="anthropic">Anthropic / Claude</option>
+              <option value="none">不传参数</option>
+            </select>
+          </div>
+          <div class="settings-field">
+            <label class="settings-label">对话思考模式</label>
+            <select class="settings-input" id="setChatThinkingEnabled">
+              <option value="true">开启</option>
+              <option value="false">关闭</option>
+            </select>
+          </div>
+          <div class="settings-field">
+            <label class="settings-label">补全格式</label>
+            <select class="settings-input" id="setCompletionThinkingFormat">
+              <option value="minimax">MiniMax / OpenAI 系</option>
+              <option value="qwen">Qwen3</option>
+              <option value="ollama">Ollama</option>
+              <option value="anthropic">Anthropic / Claude</option>
+              <option value="none">不传参数</option>
+            </select>
+          </div>
+        </div>
+        <!-- 第3页：补全 -->
+        <div class="settings-tab-page" id="page-completion">
+          <div class="settings-field">
+            <label class="settings-label">补全模式</label>
+            <select class="settings-input" id="setCompletionMode">
+              <option value="inline">幽灵文字（Tab 接受）</option>
+              <option value="dropdown">下拉候选（本地 + AI）</option>
+              <option value="both">两者同时启用</option>
+            </select>
+          </div>
+        </div>
+        <!-- 第4页：Agent -->
+        <div class="settings-tab-page" id="page-agent">
+          <div class="settings-field">
+            <label class="settings-label">最大操作轮数 (3-50)</label>
+            <input class="settings-input" id="setMaxAgentRounds" type="number" min="3" max="50" placeholder="10">
+          </div>
+          <div class="settings-field">
+            <label class="settings-label">每次请求最大 Tokens</label>
+            <input class="settings-input" id="setAgentMaxTokens" type="number" min="256" max="65536" placeholder="8000">
+          </div>
+          <div class="settings-field">
+            <label class="settings-label">Temperature（0=确定, 1=创造性）</label>
+            <input class="settings-input" id="setAgentTemperature" type="number" min="0" max="2" step="0.1" placeholder="0.2">
+          </div>
+        </div>
+        <!-- 第5页：系统 -->
+        <div class="settings-tab-page" id="page-system">
+          <div class="settings-field">
+            <label class="settings-label">System Prompt</label>
+            <textarea class="settings-input settings-textarea" id="setChatSystemPrompt" placeholder="你是 Cody，一个专业的编程助手..."></textarea>
+          </div>
+        </div>
+        <!-- 第6页：Skills -->
+        <div class="settings-tab-page" id="page-skills">
+          <div class="skill-list" id="skillList">
+            <div class="skill-empty">暂无 SKILL。点击下方按钮导入。</div>
+          </div>
+          <button class="skill-import-btn" id="skillImportBtn">📂 导入 SKILL 文件</button>
+        </div>
+      </div>
+      <div class="settings-footer">
+        <button class="settings-reset" id="settingsReset">恢复默认值</button>
+        <button class="settings-save" id="settingsSave">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="##NONCE_PLACEHOLDER##">
+    /* CSP nonce will be injected */
+  </script>
+</body>
+</html>

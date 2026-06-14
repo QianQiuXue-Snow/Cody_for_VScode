@@ -1,0 +1,45 @@
+import * as vscode from 'vscode';
+import * as fs from 'fs';
+import * as path from 'path';
+
+/**
+ * 聊天面板 Webview HTML 内容生成器
+ *
+ * 从 chat.html 读取 HTML 模板，
+ * 嵌入 chat.js 的脚本逻辑，
+ * 注入 CSP nonce 安全策略。
+ */
+export function getChatWebviewContent(webview: vscode.Webview, extensionUri: vscode.Uri): string {
+  const nonce = getNonce();
+
+  // 读取 HTML 模板
+  const htmlPath = path.join(extensionUri.fsPath, 'src', 'chat', 'chat.html');
+  let html = fs.readFileSync(htmlPath, 'utf-8');
+
+  // 读取 JS 脚本
+  const jsPath = path.join(extensionUri.fsPath, 'src', 'chat', 'chat.js');
+  let js = fs.readFileSync(jsPath, 'utf-8');
+
+  // 注入 CSP 的 nonce
+  html = html.replace(
+    /<meta http-equiv="Content-Security-Policy".*?>/,
+    `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src data: https:;">`
+  );
+
+  // 替换脚本占位符
+  html = html.replace(
+    /<script src="##NONCE_PLACEHOLDER##">[\s\S]*?<\/script>/,
+    `<script nonce="${nonce}">${js}</script>`
+  );
+
+  return html;
+}
+
+function getNonce(): string {
+  let text = '';
+  const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  for (let i = 0; i < 64; i++) {
+    text += possible.charAt(Math.floor(Math.random() * possible.length));
+  }
+  return text;
+}

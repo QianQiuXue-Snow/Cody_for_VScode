@@ -1,0 +1,269 @@
+{
+  "name": "cody-for-vscode",
+  "displayName": "Cody for VSCode",
+  "description": "Cody — 内嵌 VSCode 的 AI 编程助手，支持 Assistant 单次问答与 Agent 长对话工具调用",
+  "version": "0.1.0",
+  "publisher": "cody",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/QianQiuXue/Cody_for_VScode"
+  },
+  "homepage": "https://github.com/QianQiuXue/Cody_for_VScode#readme",
+  "bugs": {
+    "url": "https://github.com/QianQiuXue/Cody_for_VScode/issues"
+  },
+  "engines": {
+    "vscode": "^1.66.0"
+  },
+  "categories": [
+    "Machine Learning",
+    "Programming Languages",
+    "Other"
+  ],
+  "keywords": [
+    "ai",
+    "openai",
+    "code completion",
+    "chat",
+    "copilot"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "Cody for VSCode",
+      "properties": {
+        "aiAssistant.apiBaseUrl": {
+          "type": "string",
+          "default": "http://localhost:8000/v1",
+          "description": "对话 API 基础 URL（Assistant / Agent 共用）",
+          "order": 1
+        },
+        "aiAssistant.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "对话 API Key（内部模型可留空）",
+          "order": 2
+        },
+        "aiAssistant.completionApiBaseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "补全 API 基础 URL（留空则使用对话 API URL）",
+          "order": 3
+        },
+        "aiAssistant.completionApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "补全 API Key（留空则使用对话 API Key）",
+          "order": 4
+        },
+        "aiAssistant.completionModel": {
+          "type": "string",
+          "default": "MiniMax-M2.5-test",
+          "description": "用于代码补全的模型名称",
+          "order": 5
+        },
+        "aiAssistant.chatModel": {
+          "type": "string",
+          "default": "MiniMax-M2.5-test",
+          "description": "用于对话的模型名称（Assistant / Agent 共用）",
+          "order": 6
+        },
+        "aiAssistant.chatThinkingFormat": {
+          "type": "string",
+          "default": "minimax",
+          "enum": [
+            "minimax",
+            "qwen",
+            "ollama",
+            "anthropic",
+            "none"
+          ],
+          "enumDescriptions": [
+            "MiniMax / OpenAI 系 (extra_body: thinking)",
+            "Qwen3 (chat_template_kwargs: enable_thinking)",
+            "Ollama (think: false)",
+            "Anthropic / Claude (thinking: {type})",
+            "不传思考参数"
+          ],
+          "description": "对话思考模式参数格式",
+          "order": 7
+        },
+        "aiAssistant.chatThinkingEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "对话是否启用思考模式",
+          "order": 8
+        },
+        "aiAssistant.completionThinkingFormat": {
+          "type": "string",
+          "default": "minimax",
+          "enum": [
+            "minimax",
+            "qwen",
+            "ollama",
+            "anthropic",
+            "none"
+          ],
+          "enumDescriptions": [
+            "MiniMax / OpenAI 系 (extra_body: thinking)",
+            "Qwen3 (chat_template_kwargs: enable_thinking)",
+            "Ollama (think: false)",
+            "Anthropic / Claude (thinking: {type})",
+            "不传思考参数（补全始终关闭）"
+          ],
+          "description": "补全思考模式参数格式（补全始终关闭思考）",
+          "order": 9
+        },
+        "aiAssistant.maxTokens": {
+          "type": "number",
+          "default": 1024,
+          "description": "代码补全的最大 token 数（多行补全建议 1024）",
+          "order": 10
+        },
+        "aiAssistant.agentMaxTokens": {
+          "type": "number",
+          "default": 8000,
+          "description": "Agent 模式每次 API 请求的最大 token 数",
+          "order": 11
+        },
+        "aiAssistant.agentTemperature": {
+          "type": "number",
+          "default": 0.2,
+          "minimum": 0,
+          "maximum": 2,
+          "description": "Agent 模式的 temperature 参数（0=确定, 1=创造性）",
+          "order": 12
+        },
+        "aiAssistant.temperature": {
+          "type": "number",
+          "default": 0.3,
+          "description": "代码补全的 temperature 参数",
+          "order": 13
+        },
+        "aiAssistant.enableCompletion": {
+          "type": "boolean",
+          "default": true,
+          "description": "是否启用实时代码补全",
+          "order": 14
+        },
+        "aiAssistant.completionMode": {
+          "type": "string",
+          "default": "both",
+          "enum": [
+            "inline",
+            "dropdown",
+            "both"
+          ],
+          "enumDescriptions": [
+            "幽灵文字（Tab 接受）",
+            "下拉候选列表（本地毫秒出 + 后台 AI 替换）",
+            "两者同时启用"
+          ],
+          "description": "代码补全模式",
+          "order": 15
+        },
+        "aiAssistant.completionDebounceMs": {
+          "type": "number",
+          "default": 500,
+          "description": "代码补全的防抖延迟（毫秒）",
+          "order": 16
+        },
+        "aiAssistant.chatSystemPrompt": {
+          "type": "string",
+          "default": "你是 Cody，一个专业的编程助手，内嵌在 VSCode 编辑器中。请用中文回答问题，提供准确、有帮助的编程建议。回答时可以使用 Markdown 格式，代码块请标注语言。",
+          "description": "Assistant / Agent 模式的系统 Prompt（自定义 Cody 行为）",
+          "order": 17
+        },
+        "aiAssistant.agentEditMode": {
+          "type": "string",
+          "default": "normal",
+          "enum": [
+            "normal",
+            "fast"
+          ],
+          "description": "Agent 编辑模式：normal=编辑前需审批, fast=直接执行",
+          "order": 18
+        },
+        "aiAssistant.maxAgentRounds": {
+          "type": "number",
+          "default": 10,
+          "minimum": 3,
+          "maximum": 50,
+          "description": "Agent 最大操作轮数（3-50）",
+          "order": 19
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "aiAssistant.openChat",
+        "title": "Cody: 打开对话面板"
+      },
+      {
+        "command": "aiAssistant.explainSelection",
+        "title": "Cody: 解读选中代码"
+      },
+      {
+        "command": "aiAssistant.explainFile",
+        "title": "Cody: 解读当前文件"
+      },
+      {
+        "command": "aiAssistant.toggleCompletion",
+        "title": "Cody: 切换代码补全"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "aiAssistant.explainSelection",
+        "key": "ctrl+shift+e",
+        "mac": "cmd+shift+e",
+        "when": "editorHasSelection"
+      },
+      {
+        "command": "aiAssistant.openChat",
+        "key": "ctrl+shift+l",
+        "mac": "cmd+shift+l"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "aiAssistantSidebar",
+          "title": "Cody",
+          "icon": "$(hubot)"
+        }
+      ]
+    },
+    "views": {
+      "aiAssistantSidebar": [
+        {
+          "type": "webview",
+          "id": "aiAssistant.chatView",
+          "name": "对话"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "~1.66.0",
+    "@vscode/vsce": "^3.9.1",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "docx": "^9.7.1",
+    "mammoth": "^1.12.0",
+    "pdf-parse": "^2.4.5",
+    "xlsx": "^0.18.5"
+  }
+}
