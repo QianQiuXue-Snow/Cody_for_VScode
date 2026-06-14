@@ -7,11 +7,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/QianQiuXue/Cody_for_VScode"
+    "url": "https://github.com/QianQiuXue-Snow/Cody_for_VScode"
   },
-  "homepage": "https://github.com/QianQiuXue/Cody_for_VScode#readme",
+  "homepage": "https://github.com/QianQiuXue-Snow/Cody_for_VScode#readme",
   "bugs": {
-    "url": "https://github.com/QianQiuXue/Cody_for_VScode/issues"
+    "url": "https://github.com/QianQiuXue-Snow/Cody_for_VScode/issues"
   },
   "engines": {
     "vscode": "^1.66.0"
