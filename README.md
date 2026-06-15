@@ -1,6 +1,6 @@
 # Cody for VSCode
 
-[![VSCode](https://img.shields.io/badge/VSCode-%5E1.66.0-blue)](https://code.visualstudio.com/)
+[![VSCode](https://img.shields.io/badge/VSCode-%5E1.63.0-blue)](https://code.visualstudio.com/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.1.0-orange)](package.json)
 
@@ -20,7 +20,7 @@
 | 办公文档 | Agent 直接创建 & 读取 .docx / .xlsx / .pdf |
 | 快照回滚 | Agent 每次修改自动备份，随时一键恢复 |
 | Token 流式 | 对话 SSE 流式输出，首字延迟极低 |
-| 低版本兼容 | 最低支持 VSCode 1.66 / Windows 7 |
+| 低版本兼容 | 最低支持 VSCode 1.63 / Windows 7（<1.68 时 inline 补全自动降级跳过） |
 
 ## 快速开始
 
@@ -86,7 +86,7 @@ cody-for-vscode/
 |---|------|
 | 语言 | TypeScript |
 | 运行时 | Node.js (VSCode Extension Host) |
-| API | VSCode Extension API v1.66+ |
+| API | VSCode Extension API v1.63+ |
 | AI 通信 | Node.js 原生 http/https + SSE 流式解析 |
 | 文档处理 | mammoth / docx / xlsx / pdf-parse |
 | 状态持久化 | VSCode ExtensionContext.globalState |

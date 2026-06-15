@@ -14,7 +14,7 @@
     "url": "https://github.com/QianQiuXue-Snow/Cody_for_VScode/issues"
   },
   "engines": {
-    "vscode": "^1.66.0"
+    "vscode": "^1.63.0"
   },
   "categories": [
     "Machine Learning",
@@ -256,7 +256,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "@types/vscode": "~1.66.0",
+    "@types/vscode": "~1.63.0",
     "@vscode/vsce": "^3.9.1",
     "typescript": "^5.3.0"
   },
