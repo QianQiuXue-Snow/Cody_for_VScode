@@ -1,62 +1,25 @@
 import * as vscode from 'vscode';
 import { openAIClient } from '../api/openaiClient';
 import { Settings } from '../config/settings';
+import { cleanCompletion } from './completionCleaner';
 
-// 兼容 VSCode <1.68：Inline* 类不存在时用 any 回退
+// 兼容 VSCode <1.68
 const _v = vscode as any;
 const InlineCompletionItem: any = _v.InlineCompletionItem ?? (function dummy() {});
 const InlineCompletionTriggerKindAutomatic = _v.InlineCompletionTriggerKind?.Automatic ?? 0;
 
-// ========== 补全缓存 LRU ==========
-interface CacheEntry { completion: string; timestamp: number; }
-class CompletionCache {
-  private map = new Map<string, CacheEntry>();
-  private readonly maxSize = 64;
-  private readonly ttlMs = 60_000;
-
-  private makeKey(language: string, codeBefore: string): string {
-    const tail = codeBefore.length > 80 ? codeBefore.slice(-80) : codeBefore;
-    return `${language}::${tail.replace(/\s+/g, ' ').trim()}`;
-  }
-
-  get(language: string, codeBefore: string): string | null {
-    const entry = this.map.get(this.makeKey(language, codeBefore));
-    if (!entry) return null;
-    if (Date.now() - entry.timestamp > this.ttlMs) {
-      this.map.delete(this.makeKey(language, codeBefore));
-      return null;
-    }
-    this.map.delete(this.makeKey(language, codeBefore));
-    this.map.set(this.makeKey(language, codeBefore), entry);
-    return entry.completion;
-  }
-
-  set(language: string, codeBefore: string, completion: string): void {
-    if (completion.length < 2) return;
-    const key = this.makeKey(language, codeBefore);
-    if (this.map.size >= this.maxSize) {
-      const first = this.map.keys().next().value;
-      if (first) this.map.delete(first);
-    }
-    this.map.set(key, { completion, timestamp: Date.now() });
-  }
-
-  clear(): void { this.map.clear(); }
-}
-
-const cache = new CompletionCache();
-
-// ========== Provider ==========
-
 /**
- * 实时代码补全 Provider
+ * inline 幽灵文字补全 Provider
  *
- * 仅在 VSCode ≥1.68 时注册为 InlineCompletionItemProvider。
+ * 请求管理：
+ * - generation：每次新补全触发时 +1，旧请求完成时比对，过期丢弃
+ * - 防抖 200ms：快速连续打字时只发最后一次
+ * - AbortController：API 层面取消（如实现支持）
  */
 export class CompletionProvider {
   private debounceTimer: ReturnType<typeof setTimeout> | undefined;
   private isEnabled: boolean = true;
-  private pendingRequest: { cancel: () => void } | null = null;
+  private generation = 0; // 每次触发 +1，过期检测
 
   constructor() {
     vscode.workspace.onDidChangeConfiguration((e) => {
@@ -68,12 +31,16 @@ export class CompletionProvider {
   }
 
   get name(): string { return 'Cody'; }
-  setEnabled(enabled: boolean): void { this.isEnabled = enabled; }
+
+  setEnabled(enabled: boolean): void {
+    this.isEnabled = enabled;
+    if (!enabled) this.reset();
+  }
 
   async provideInlineCompletionItems(
     document: vscode.TextDocument,
     position: vscode.Position,
-    context: any, // vscode.InlineCompletionContext (≥1.68)
+    context: any,
     token: vscode.CancellationToken
   ): Promise<any[]> {
     if (!this.isEnabled || !Settings.isInlineMode) return [];
@@ -85,38 +52,52 @@ export class CompletionProvider {
     return this.doCompletion(document, position, token);
   }
 
+  // ===== 防抖 + 丢弃未完成请求 =====
+
   private debouncedCompletion(
     document: vscode.TextDocument,
     position: vscode.Position,
     token: vscode.CancellationToken
   ): Promise<any[]> {
-    if (this.pendingRequest) { this.pendingRequest.cancel(); this.pendingRequest = null; }
+    // 每次打字 → 清除旧定时器 + 递增 generation（使旧请求作废）
+    if (this.debounceTimer) {
+      clearTimeout(this.debounceTimer);
+      this.debounceTimer = undefined;
+    }
+    const gen = ++this.generation;
 
     return new Promise((resolve) => {
-      if (this.debounceTimer) clearTimeout(this.debounceTimer);
-
       this.debounceTimer = setTimeout(async () => {
         if (token.isCancellationRequested) { resolve([]); return; }
-
-        let resolved = false;
-        this.pendingRequest = {
-          cancel: () => {
-            if (!resolved) { resolved = true; resolve([]); }
-          }
-        };
+        // 开始前再检查：期间是否有新触发？
+        if (gen !== this.generation) { resolve([]); return; }
 
         const items = await this.doCompletion(document, position, token);
-        if (!resolved) { resolved = true; resolve(items); }
-        this.pendingRequest = null;
-      }, 250);
+        // 完成后检查：期间是否有新触发？
+        if (gen !== this.generation) { resolve([]); return; }
+
+        resolve(items);
+      }, 200);
 
       token.onCancellationRequested(() => {
-        if (this.debounceTimer) { clearTimeout(this.debounceTimer); this.debounceTimer = undefined; }
-        if (this.pendingRequest) { this.pendingRequest.cancel(); this.pendingRequest = null; }
+        if (this.debounceTimer) {
+          clearTimeout(this.debounceTimer);
+          this.debounceTimer = undefined;
+        }
         resolve([]);
       });
     });
   }
+
+  reset(): void {
+    this.generation++;
+    if (this.debounceTimer) {
+      clearTimeout(this.debounceTimer);
+      this.debounceTimer = undefined;
+    }
+  }
+
+  // ===== 补全主逻辑 =====
 
   private async doCompletion(
     document: vscode.TextDocument,
@@ -126,23 +107,16 @@ export class CompletionProvider {
     try {
       const language = document.languageId || 'plaintext';
 
-      const startOffset = Math.max(0, document.offsetAt(position) - 400);
-      const startPos = document.positionAt(startOffset);
+      // 扩大上下文：取光标前 800 字符，光标后 80 字符
+      const beforeLen = Math.min(800, document.offsetAt(position));
+      const startPos = document.positionAt(document.offsetAt(position) - beforeLen);
       const codeBefore = document.getText(new vscode.Range(startPos, position));
 
-      const endOffset = Math.min(document.getText().length, document.offsetAt(position) + 80);
-      const endPos = document.positionAt(endOffset);
+      const afterLen = Math.min(80, document.getText().length - document.offsetAt(position));
+      const endPos = document.positionAt(document.offsetAt(position) + afterLen);
       const codeAfter = document.getText(new vscode.Range(position, endPos));
 
       if (token.isCancellationRequested) return [];
-
-      const cached = cache.get(language, codeBefore);
-      if (cached) {
-        console.log('[Cody] 缓存命中');
-        return this.makeItems(cached, position);
-      }
-
-      console.log('[Cody] 补全请求:', { language, beforeLen: codeBefore.length });
 
       const completion = await this.withTimeout(
         openAIClient.getCompletion(codeBefore, codeAfter, language),
@@ -152,12 +126,8 @@ export class CompletionProvider {
       if (token.isCancellationRequested) return [];
       if (!completion || completion.trim().length === 0) return [];
 
-      const cleaned = this.cleanAndFilter(completion, codeBefore, codeAfter);
+      const cleaned = cleanCompletion(completion, codeBefore, codeAfter, language);
       if (!cleaned) return [];
-
-      console.log('[Cody] 补全成功:', { rawLen: completion.length, cleanedLen: cleaned.length });
-
-      cache.set(language, codeBefore, cleaned);
 
       return this.makeItems(cleaned, position);
 
@@ -180,102 +150,6 @@ export class CompletionProvider {
         (e) => { clearTimeout(timer); reject(e); }
       );
     });
-  }
-
-  private cleanAndFilter(
-    completion: string,
-    codeBefore: string,
-    codeAfter: string
-  ): string | null {
-    let text = completion.trim();
-
-    text = text.replace(/^```[\w]*\n?/g, '').replace(/\n?```$/g, '');
-
-    text = this.stripExistingLines(text, codeBefore);
-
-    const lastLineOfBefore = codeBefore.split('\n').pop() || '';
-    const trimmedLastLine = lastLineOfBefore.trimEnd();
-    if (trimmedLastLine && text.startsWith(trimmedLastLine)) {
-      text = text.slice(trimmedLastLine.length);
-    }
-
-    text = this.stripLongestSuffix(text, codeBefore);
-
-    const firstLineOfAfter = codeAfter.trimStart().split('\n')[0] || '';
-    if (firstLineOfAfter.length > 0 && text.includes(firstLineOfAfter)) {
-      const idx = text.indexOf(firstLineOfAfter);
-      if (idx > 0) text = text.substring(0, idx).trimEnd();
-    }
-
-    text = text.trim();
-    if (text.length === 0) return null;
-
-    if (/^[\s\t\n\r]+$/.test(text)) return null;
-    if (text.length <= 1 && !text.match(/[\)\]\}\"']/)) return null;
-    text = this.truncateToCompleteBlock(text);
-
-    return text || null;
-  }
-
-  private stripExistingLines(completion: string, codeBefore: string): string {
-    const compLines = completion.split('\n');
-    const beforeLines = codeBefore.split('\n');
-    const tail = beforeLines.slice(-5);
-
-    let stripCount = 0;
-    for (let i = 0; i < Math.min(compLines.length, 5); i++) {
-      const compLine = compLines[i].trim();
-      if (compLine.length === 0) break;
-      const found = tail.some(bl => bl.trim() === compLine);
-      if (found) stripCount = i + 1;
-      else break;
-    }
-    return stripCount > 0 ? compLines.slice(stripCount).join('\n') : completion;
-  }
-
-  private stripLongestSuffix(completion: string, codeBefore: string): string {
-    const suffix = codeBefore.length > 200 ? codeBefore.slice(-200) : codeBefore;
-    const prefix = completion.length > 200 ? completion.slice(0, 200) : completion;
-
-    let maxOverlap = 0;
-    for (let i = Math.min(prefix.length, suffix.length); i > 0; i--) {
-      const prefixPart = prefix.substring(0, i);
-      if (suffix.endsWith(prefixPart)) {
-        maxOverlap = i;
-        break;
-      }
-    }
-    return maxOverlap > 0 ? completion.substring(maxOverlap) : completion;
-  }
-
-  private truncateToCompleteBlock(text: string): string {
-    const lines = text.split('\n');
-
-    while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
-      lines.pop();
-    }
-    if (lines.length === 0) return '';
-
-    const last = lines[lines.length - 1].trimEnd();
-    if (this.isCompleteLineEnding(last)) return lines.join('\n');
-
-    for (let i = lines.length - 2; i >= 0; i--) {
-      const candidate = lines[i].trimEnd();
-      if (this.isCompleteLineEnding(candidate)) {
-        return lines.slice(0, i + 1).join('\n');
-      }
-    }
-
-    return lines[0];
-  }
-
-  private isCompleteLineEnding(line: string): boolean {
-    const t = line.trimEnd();
-    if (t.length === 0) return true;
-    if (/[;{})\]>'"`]$/.test(t)) return true;
-    if (t.endsWith(':')) return true;
-    if (/[+\-*/%=<>!&|^~,]$/.test(t)) return false;
-    return true;
   }
 
   private makeItems(text: string, position: vscode.Position): any[] {
