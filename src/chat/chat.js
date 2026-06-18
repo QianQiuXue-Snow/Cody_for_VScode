@@ -206,6 +206,16 @@ window.addEventListener('message', function(event) {
       break;
     case 'agentStatus':
       updateAgentActionBar(message.running, message.paused);
+      // 代理停止时确保清理 streaming 占位符和状态
+      if (!message.running) {
+        if (isStreaming) {
+          isStreaming = false;
+          currentAssistantMessage = '';
+          removeTypingPlaceholder();
+          updateSendButton();
+          updateStatus();
+        }
+      }
       break;
     case 'skillsLoaded':
       renderSkillsList(message.skills || []);

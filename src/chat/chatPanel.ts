@@ -214,7 +214,10 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     } finally {
       this.agentRunning = false;
       this.agentPaused = false;
+      // 确保 webview 退出 streaming 状态（正常结束或异常均走到这里）
+      this.postMessage('streamEnd', {});
       this.postMessage('agentStatus', { running: false, paused: false });
+      await this.collapseLongMessages();
     }
   }
 
