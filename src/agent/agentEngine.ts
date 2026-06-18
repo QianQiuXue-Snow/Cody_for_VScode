@@ -58,7 +58,7 @@ import { Settings } from '../config/settings';
 
 export type ToolName =
   | 'read_file' | 'write_file' | 'list_files' | 'search_code' | 'delete_file' | 'execute_command'
-  | 'read_docx' | 'write_docx' | 'read_xlsx' | 'write_xlsx' | 'read_pdf'
+  | 'read_docx' | 'write_docx' | 'edit_docx' | 'read_xlsx' | 'write_xlsx' | 'read_pdf'
   | 'todo';
 
 export interface ToolCall {
@@ -114,11 +114,12 @@ export function buildAgentSystemPrompt(skillsPrompt?: string): string {
 
 ## 办公文档工具
 
-|\`read_docx\`|读取 Word 文档 (.docx)|path: 文件路径|
-|\`write_docx\`|创建 Word 文档 (.docx)|path: 文件路径, content: Markdown 格式内容（支持 # ## ### ** ** 列表等）|
-|\`read_xlsx\`|读取 Excel 表格 (.xlsx)|path: 文件路径, sheet: 工作表名称（可选，默认第一个）|
-|\`write_xlsx\`|创建 Excel 表格 (.xlsx)|path: 文件路径, content: JSON 二维数组或对象数组格式|
-|\`read_pdf\`|读取 PDF 文件（内部多策略自动回退，非常可靠）|path: 文件路径|
+| \`read_docx\`|读取 Word 文档 (.docx)|path: 文件路径|
+| \`write_docx\`|创建 Word 文档 (.docx)|path: 文件路径, content: Markdown 格式内容（支持 # ## ### ** ** 列表等）|
+| \`edit_docx\`|修改已有 Word 文档 (.docx)|path: 文件路径, content: 完整 Markdown 格式内容（覆盖写入）|
+| \`read_xlsx\`|读取 Excel 表格 (.xlsx)|path: 文件路径, sheet: 工作表名称（可选，默认第一个）|
+| \`write_xlsx\`|创建 Excel 表格 (.xlsx)|path: 文件路径, content: JSON 二维数组或对象数组格式|
+| \`read_pdf\`|读取 PDF 文件（内部多策略自动回退，非常可靠）|path: 文件路径|
 
 |\`todo\`|更新任务进度（追踪多步骤任务）|items: JSON数组 [{id, text, status: pending|in_progress|completed}]|
 
@@ -127,8 +128,9 @@ export function buildAgentSystemPrompt(skillsPrompt?: string): string {
 ## 工程信息
 - 工程根目录: \`${rootPath}\`
 
-## write_docx 的 content 格式
+## write_docx / edit_docx 的 content 格式
 使用 Markdown 编写，支持：# 标题、## 二级标题、**加粗**、*斜体*、- 无序列表、1. 有序列表、普通段落。
+其中 write_docx 用于新建 Word 文档，edit_docx 用于修改已有文档（先 read_docx 读取内容，修改后在 content 中提供完整新内容覆盖写入）。
 
 ## write_xlsx 的 content 格式
 JSON 二维数组（每行一个数组）或对象数组（键名为表头），例如：
@@ -147,7 +149,7 @@ JSON 二维数组（每行一个数组）或对象数组（键名为表头），
 
 **路径请使用工具名对应的参数名**：
 - read_file/write_file/delete_file → "path"
-- read_pdf / read_docx / read_xlsx / write_docx / write_xlsx → "path"
+- read_pdf / read_docx / read_xlsx / write_docx / edit_docx / write_xlsx → "path"
 - list_files → "dir"（空字符串=根目录）
 - search_code → "pattern"
 - execute_command → "cmd"
@@ -158,7 +160,8 @@ JSON 二维数组（每行一个数组）或对象数组（键名为表头），
 
 ## 重要规则
 - 修改文件前先用 read_file 读取现有内容
-- \`write_docx\` 提供 Markdown 格式内容，\`write_xlsx\` 提供 JSON 数组
+- \`write_docx\` / \`edit_docx\` 提供 Markdown 格式内容，\`write_xlsx\` 提供 JSON 数组
+- 修改 Word 文档时先 \`read_docx\` 读取内容，然后用 \`edit_docx\` 覆盖写入
 - 所有路径相对于工程根目录
 - **路径必须使用相对路径**：绝对路径（如 d 盘路径或 /home 路径）会被安全机制拒绝。所有工具的 path 参数必须相对于工程根目录。
 - **高效操作**：
@@ -170,7 +173,7 @@ JSON 二维数组（每行一个数组）或对象数组（键名为表头），
   * 每一轮都要有实质性进展，不要只在对话中描述计划而不执行
 - **文档输出规则**：当需要输出的内容超过 3 段或 500 字时（如 Markdown 文档、Word 报告、分析总结、长篇文章等），**禁止直接在对话框中打印完整内容**，必须使用工具写入文件：
   * Markdown / 文本 → 用 \`write_file\` 写入 \`docs/文件名.md\`
-  * Word 文档 → 用 \`write_docx\` 写入 \`docs/文件名.docx\`
+  * Word 文档 → 用 \`write_docx\`（新建）或 \`edit_docx\`（修改已有），写入 \`docs/文件名.docx\`
   * Excel 表格 → 用 \`write_xlsx\` 写入 \`docs/文件名.xlsx\`
   * 写入后只需在对话框中告知文件路径和简短摘要即可`;
 
@@ -259,7 +262,7 @@ export function salvageToolJson(raw: string): any | null {
   const nameMatch = raw.match(/"name"\s*:\s*"([^"]+)"/);
   if (!nameMatch) return null;
 
-  const isContentTool = /^(write_file|write_docx|write_xlsx)$/.test(nameMatch[1]);
+  const isContentTool = /^(write_file|write_docx|edit_docx|write_xlsx)$/.test(nameMatch[1]);
 
   if (isContentTool) {
     // 文件写入类：path + content（content 可能极长，正则不可靠 → 用索引定位）
@@ -330,6 +333,7 @@ function formatToolStat(r: ToolResult): string {
         : `读取 \`${a.path}\` — 文件不存在`;
     case 'write_file':
     case 'write_docx':
+    case 'edit_docx':
     case 'write_xlsx':
       return r.success
         ? `写入 \`${a.path}\` — ${(a.content || r.output).length} 字符`
@@ -380,7 +384,7 @@ export function formatToolResultsDetails(results: ToolResult[]): string {
       body = r.success
         ? `文件已写入 \`${r.arguments.path}\`（${(r.arguments.content || '').length} 字符）`
         : r.output;
-    } else if (r.name === 'write_docx' || r.name === 'write_xlsx') {
+    } else if (r.name === 'write_docx' || r.name === 'edit_docx' || r.name === 'write_xlsx') {
       body = r.success ? r.output : r.output;
     } else if (r.name === 'read_xlsx') {
       body = `\`\`\`\n${r.output.length > 20000 ? r.output.substring(0, 20000) + '\n// ... (已截断)' : r.output}\n\`\`\``;
@@ -407,6 +411,7 @@ function describeToolAction(r: ToolResult): string {
     case 'execute_command': return `执行命令 \`${(r.arguments.cmd || '').substring(0, 80)}\``;
     case 'read_docx': return `读取 Word 文档 \`${r.arguments.path}\``;
     case 'write_docx': return `创建 Word 文档 \`${r.arguments.path}\``;
+    case 'edit_docx': return `修改 Word 文档 \`${r.arguments.path}\``;
     case 'read_xlsx': return `读取 Excel 表格 \`${r.arguments.path}\``;
     case 'write_xlsx': return `创建 Excel 表格 \`${r.arguments.path}\``;
     case 'read_pdf': return `读取 PDF 文件 \`${r.arguments.path}\``;
@@ -429,7 +434,7 @@ export function formatToolResultsForAI(results: ToolResult[]): string {
       output = r.output.length > 30000 ? r.output.substring(0, 30000) + '\n...(已截断)' : r.output;
     } else if (r.name === 'read_xlsx') {
       output = r.output.length > 30000 ? r.output.substring(0, 30000) + '\n...(已截断)' : r.output;
-    } else if (r.name === 'write_file' || r.name === 'write_docx' || r.name === 'write_xlsx') {
+    } else if (r.name === 'write_file' || r.name === 'write_docx' || r.name === 'edit_docx' || r.name === 'write_xlsx') {
       output = `文件已创建: ${path}`;
     } else if (r.name === 'read_file') {
       output = r.output;
@@ -461,6 +466,7 @@ export async function executeTool(toolCall: ToolCall): Promise<ToolResult> {
       case 'execute_command': return executeCommand(toolCall.arguments, rootPath);
       case 'read_docx': return await executeReadDocx(rootPath, toolCall.arguments);
       case 'write_docx': return await executeWriteDocx(rootPath, toolCall.arguments);
+      case 'edit_docx': return await executeWriteDocx(rootPath, toolCall.arguments); // 与 write_docx 共用实现
       case 'read_xlsx': return executeReadXlsx(rootPath, toolCall.arguments);
       case 'write_xlsx': return executeWriteXlsx(rootPath, toolCall.arguments);
       case 'read_pdf': return await executeReadPdf(rootPath, toolCall.arguments);
