@@ -7,6 +7,7 @@ import { getChatWebviewContent } from './webviewContent';
 import {
   buildAgentSystemPrompt,
   parseToolCalls,
+  salvageToolJson,
   executeTool,
   formatToolResultsForAI,
   formatToolResultsSummary,
@@ -339,7 +340,21 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
       }
 
       // 解析工具调用（从完整输出中剥离 ```tool 块）
-      const { text: cleanText, toolCalls } = parseToolCalls(fullOutput);
+      let { text: cleanText, toolCalls } = parseToolCalls(fullOutput);
+
+      // 安全网：若输出含 ```tool 标记但未解析出调用 → 用更宽松正则重试
+      if (toolCalls.length === 0 && /`{2,3}\s*tool/.test(fullOutput)) {
+        const forceMatch = fullOutput.match(/`{2,3}\s*tool\s*([\s\S]*?)`{2,3}/);
+        if (forceMatch) {
+          const retry = salvageToolJson(forceMatch[1]);
+          if (retry && retry.calls) {
+            for (const c of retry.calls) {
+              if (c.name && c.arguments) toolCalls.push(c);
+            }
+            cleanText = fullOutput.replace(forceMatch[0], '').trim();
+          }
+        }
+      }
 
       if (!cleanText && toolCalls.length === 0) {
         // 空响应：尝试重试一次（带引导提示）

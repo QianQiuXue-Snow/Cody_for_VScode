@@ -183,8 +183,8 @@ export function parseToolCalls(content: string): { text: string; toolCalls: Tool
   const toolCalls: ToolCall[] = [];
   let text = content;
 
-  // ===== 格式 A：```tool JSON（兼容2或3个反引号）=====
-  const toolBlockRegex = /`{2,3}tool\s*\n([\s\S]*?)`{2,3}/g;
+  // ===== 格式 A：```tool JSON（放宽：tool 后允许任意空白，包括无换行）=====
+  const toolBlockRegex = /`{2,3}\s*tool\s*([\s\S]*?)`{2,3}/g;
   let match: RegExpExecArray | null;
 
   while ((match = toolBlockRegex.exec(content)) !== null) {
@@ -192,6 +192,7 @@ export function parseToolCalls(content: string): { text: string; toolCalls: Tool
     try {
       parsed = JSON.parse(match[1]);
     } catch {
+      // 兜底：逐字段提取（覆盖所有工具名）
       parsed = salvageToolJson(match[1]);
     }
     if (parsed && parsed.calls && Array.isArray(parsed.calls)) {
@@ -252,41 +253,61 @@ function parseXmlToolCalls(xml: string): ToolCall[] {
   return calls;
 }
 
-/** 当 JSON.parse 失败时的兜底：用正则提取 write_file/write_docx/write_xlsx 的 path 与 content */
-function salvageToolJson(raw: string): any | null {
-  // 提取 path
-  const pathMatch = raw.match(/"path"\s*:\s*"([^"]+)"/);
-  if (!pathMatch) return null;
-
+/** JSON.parse 失败时的通用兜底：提取所有 name/arguments 字段 */
+export function salvageToolJson(raw: string): any | null {
   // 提取 name
-  const nameMatch = raw.match(/"name"\s*:\s*"(write_file|write_docx|write_xlsx)"/);
-  const name = nameMatch ? nameMatch[1] : 'write_file';
+  const nameMatch = raw.match(/"name"\s*:\s*"([^"]+)"/);
+  if (!nameMatch) return null;
 
-  // 提取 content：找到 "content": " 起始位置
-  const contentKeyIdx = raw.indexOf('"content": "');
-  if (contentKeyIdx === -1) return null;
-  const contentStart = contentKeyIdx + '"content": "'.length;
+  const isContentTool = /^(write_file|write_docx|write_xlsx)$/.test(nameMatch[1]);
 
-  // content 终点：最后的 " 之后是 } } ] } 结构
-  // 在 raw 末尾查找 " 后跟可选空白 + } } ] } 模式
-  const tailPattern = /"\s*\}\s*\]\s*\}$/;
-  const tailMatch = raw.match(tailPattern);
-  if (!tailMatch || tailMatch.index === undefined || tailMatch.index <= contentStart) return null;
+  if (isContentTool) {
+    // 文件写入类：path + content（content 可能极长，正则不可靠 → 用索引定位）
+    const pathMatch = raw.match(/"path"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+    if (!pathMatch) return null;
 
-  let content = raw.substring(contentStart, tailMatch.index);
+    const contentKeyIdx = raw.indexOf('"content": "');
+    if (contentKeyIdx === -1) return null;
+    const contentStart = contentKeyIdx + '"content": "'.length;
 
-  // 反转义 JSON 转义序列
-  content = content
-    .replace(/\\"/g, '"')
-    .replace(/\\n/g, '\n')
-    .replace(/\\t/g, '\t')
-    .replace(/\\\\/g, '\\');
+    // content 终点：最后一个 " 后跟 } } ] } 结构
+    const tailMatch = raw.match(/"(?:\s*\}\s*\]\s*\}|\s*\}\s*\])$/);
+    if (!tailMatch || tailMatch.index === undefined || tailMatch.index <= contentStart) return null;
 
-  if (!content) return null;
+    let content = raw.substring(contentStart, tailMatch.index)
+      .replace(/\\"/g, '"')
+      .replace(/\\n/g, '\n')
+      .replace(/\\t/g, '\t')
+      .replace(/\\\\/g, '\\');
+    if (!content) return null;
 
-  return {
-    calls: [{ name, arguments: { path: pathMatch[1], content } }],
-  };
+    return {
+      calls: [{ name: nameMatch[1], arguments: { path: pathMatch[1], content } }],
+    };
+  }
+
+  // 非 content 工具：逐 key-value 提取
+  const args: Record<string, any> = {};
+  const kvRegex = /"(\w+)"\s*:\s*("(?:[^"\\]|\\.)*"|true|false|null|-?\d+(?:\.\d+)?)/g;
+  let m: RegExpExecArray | null;
+  while ((m = kvRegex.exec(raw)) !== null) {
+    if (m[1] === 'name' || m[1] === 'calls') continue;
+    let v: any = m[2];
+    if (v.startsWith('"')) {
+      v = v.slice(1, -1)
+        .replace(/\\"/g, '"')
+        .replace(/\\n/g, '\n')
+        .replace(/\\t/g, '\t')
+        .replace(/\\\\/g, '\\');
+    } else if (v === 'true') v = true;
+    else if (v === 'false') v = false;
+    else if (v === 'null') v = null;
+    else v = parseFloat(v);
+    args[m[1]] = v;
+  }
+
+  if (Object.keys(args).length === 0) return null;
+  return { calls: [{ name: nameMatch[1], arguments: args }] };
 }
 
 // ========== 摘要 / 详情 ==========
