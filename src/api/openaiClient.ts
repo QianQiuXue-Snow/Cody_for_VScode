@@ -44,8 +44,12 @@ export interface ChatChoice {
  */
 export type StreamChunkCallback = (content: string) => void;
 
-/** Token 统计回调：流式请求完成时调用 */
-export type TokenCountCallback = (promptTokens: number, completionTokens: number) => void;
+/** 对话 token 统计回调：缓存命中 / 未命中 / 输出 */
+export type ChatTokenCallback = (
+  cachedPromptTokens: number,
+  uncachedPromptTokens: number,
+  completionTokens: number
+) => void;
 
 /**
  * 估算 token 数（混合中英文）
@@ -80,7 +84,7 @@ export class OpenAIClient {
   /** 是否启用 */
   private chatThink: boolean;
   /** Token 统计回调 */
-  private _onTokenCount: TokenCountCallback | null = null;
+  private _onTokenCount: ChatTokenCallback | null = null;
 
   constructor() {
     this.chatBaseUrl = Settings.apiBaseUrl;
@@ -102,8 +106,8 @@ export class OpenAIClient {
     this.chatThink = Settings.chatThinkingEnabled;
   }
 
-  /** 设置 token 统计回调 */
-  setTokenCallback(cb: TokenCountCallback | null): void {
+  /** 设置对话 token 统计回调 */
+  setTokenCallback(cb: ChatTokenCallback | null): void {
     this._onTokenCount = cb;
   }
 
@@ -281,10 +285,13 @@ export class OpenAIClient {
       onChunk(content);
     };
     await this.httpPost(this.chatBaseUrl, this.chatApiKey, 'chat/completions', bodyObj, true, wrappedChunk, abortSignal, 60000);
-    // 触发 token 统计
+    // 触发 token 统计：系统 Prompt = 可缓存，其余消息 = 未缓存
     if (this._onTokenCount) {
-      const promptText = request.messages.map(m => m.content).join('');
-      this._onTokenCount(estimateTokens(promptText), estimateTokens(full));
+      const sysMsg = request.messages.find(m => m.role === 'system');
+      const nonSysText = request.messages.filter(m => m.role !== 'system').map(m => m.content).join('');
+      const cached = sysMsg ? estimateTokens(sysMsg.content) : 0;
+      const uncached = estimateTokens(nonSysText);
+      this._onTokenCount(cached, uncached, estimateTokens(full));
     }
   }
 

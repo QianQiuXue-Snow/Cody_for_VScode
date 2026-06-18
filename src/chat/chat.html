@@ -222,6 +222,11 @@
     }
     .stats-label { color: var(--text-secondary); }
     .stats-value { font-weight: 600; color: var(--text-primary); }
+    .stats-section-label {
+      font-size: 11px; font-weight: 600; color: var(--text-secondary);
+      padding: 4px 0 2px; border-bottom: 1px solid var(--border-color);
+      margin: 4px 0 6px; text-transform: none; letter-spacing: 0;
+    }
     .stats-timer { font-size: 10px; color: var(--text-secondary); text-align: right; }
 
     .input-container {
@@ -758,30 +763,36 @@
       <span class="stats-summary" id="statsSummary">--</span>
     </div>
     <div class="stats-body" id="statsBody">
+      <!-- 对话区 -->
+      <div class="stats-section-label">💬 对话</div>
       <div class="stats-grid">
         <div class="stats-item">
-          <span class="stats-label">对话请求</span>
+          <span class="stats-label">请求</span>
           <span class="stats-value" id="statChatRequests">0</span>
         </div>
         <div class="stats-item">
-          <span class="stats-label">对话 Token</span>
-          <span class="stats-value" id="statChatTokens">0</span>
+          <span class="stats-label">输入·缓存命中</span>
+          <span class="stats-value" id="statCached">0</span>
         </div>
         <div class="stats-item">
-          <span class="stats-label">补全请求</span>
-          <span class="stats-value" id="statCompRequests">0</span>
+          <span class="stats-label">输入·缓存未命中</span>
+          <span class="stats-value" id="statUncached">0</span>
         </div>
         <div class="stats-item">
-          <span class="stats-label">补全 Token</span>
-          <span class="stats-value" id="statCompTokens">0</span>
+          <span class="stats-label">输出</span>
+          <span class="stats-value" id="statCompletion">0</span>
+        </div>
+      </div>
+      <!-- 补全区 -->
+      <div class="stats-section-label">⌨️ 补全</div>
+      <div class="stats-grid">
+        <div class="stats-item">
+          <span class="stats-label">请求 / 缓存命中率</span>
+          <span class="stats-value"><span id="statCompRequests">0</span> · <span id="statCacheRate">0%</span></span>
         </div>
         <div class="stats-item">
-          <span class="stats-label">缓存命中率</span>
-          <span class="stats-value" id="statCacheRate">0%</span>
-        </div>
-        <div class="stats-item">
-          <span class="stats-label">总计</span>
-          <span class="stats-value" id="statTotalTokens">0</span>
+          <span class="stats-label">Token（总计 / 本次会话）</span>
+          <span class="stats-value"><span id="statCompTokens">0</span> · <span id="statTotalTokens">0</span></span>
         </div>
       </div>
       <div class="stats-timer" id="statsTimer">运行时间: 0 分钟</div>

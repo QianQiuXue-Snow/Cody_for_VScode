@@ -27,9 +27,11 @@ const TEMPFILE_THRESHOLD = 15000;
 // ========== Token 统计 ==========
 
 interface TokenStats {
-  /** 对话总 prompt tokens */
-  promptTokens: number;
-  /** 对话总 completion tokens */
+  /** 对话系统 Prompt token（可缓存） */
+  cachedPromptTokens: number;
+  /** 对话历史 token（每次变化） */
+  uncachedPromptTokens: number;
+  /** 对话输出 token */
   completionTokens: number;
   /** 补全总 prompt tokens */
   compPromptTokens: number;
@@ -90,7 +92,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
   private tempDir: string = '';
   /** Token 统计 */
   private stats: TokenStats = {
-    promptTokens: 0, completionTokens: 0,
+    cachedPromptTokens: 0, uncachedPromptTokens: 0, completionTokens: 0,
     compPromptTokens: 0, compCompletionTokens: 0,
     chatRequests: 0, compRequests: 0,
     compCacheHits: 0, compTotal: 0,
@@ -113,9 +115,10 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     this._view = webviewView;
     webviewView.webview.options = { enableScripts: true, localResourceRoots: [this._extensionUri] };
     // 注册 token 统计回调
-    openAIClient.setTokenCallback((prompt, comp) => {
+    openAIClient.setTokenCallback((cached, uncached, comp) => {
       this.stats.chatRequests++;
-      this.stats.promptTokens += prompt;
+      this.stats.cachedPromptTokens += cached;
+      this.stats.uncachedPromptTokens += uncached;
       this.stats.completionTokens += comp;
       this.sendTokenStats();
     });
@@ -780,7 +783,8 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
   /** 发送 token 统计到 webview */
   private sendTokenStats(): void {
     const elapsed = Date.now() - this.stats.startedAt;
-    const totalTokens = this.stats.promptTokens + this.stats.completionTokens
+    const chatIn = this.stats.cachedPromptTokens + this.stats.uncachedPromptTokens;
+    const totalTokens = chatIn + this.stats.completionTokens
       + this.stats.compPromptTokens + this.stats.compCompletionTokens;
     const cacheRate = this.stats.compTotal > 0
       ? Math.round((this.stats.compCacheHits / this.stats.compTotal) * 100)
