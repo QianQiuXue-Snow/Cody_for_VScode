@@ -44,6 +44,21 @@ export interface ChatChoice {
  */
 export type StreamChunkCallback = (content: string) => void;
 
+/** Token 统计回调：流式请求完成时调用 */
+export type TokenCountCallback = (promptTokens: number, completionTokens: number) => void;
+
+/**
+ * 估算 token 数（混合中英文）
+ */
+export function estimateTokens(text: string): number {
+  let cn = 0, en = 0;
+  for (const ch of text) {
+    if (/[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/.test(ch)) { cn++; }
+    else if (ch !== ' ' && ch !== '\n' && ch !== '\r' && ch !== '\t') { en++; }
+  }
+  return Math.max(1, Math.round(cn / 1.5 + en / 4));
+}
+
 /**
  * OpenAI 兼容 API 客户端
  *
@@ -64,6 +79,8 @@ export class OpenAIClient {
   private compThinkFmt: string;
   /** 是否启用 */
   private chatThink: boolean;
+  /** Token 统计回调 */
+  private _onTokenCount: TokenCountCallback | null = null;
 
   constructor() {
     this.chatBaseUrl = Settings.apiBaseUrl;
@@ -83,6 +100,11 @@ export class OpenAIClient {
     this.chatThinkFmt = Settings.chatThinkingFormat;
     this.compThinkFmt = Settings.completionThinkingFormat;
     this.chatThink = Settings.chatThinkingEnabled;
+  }
+
+  /** 设置 token 统计回调 */
+  setTokenCallback(cb: TokenCountCallback | null): void {
+    this._onTokenCount = cb;
   }
 
   /** 根据格式构建思考模式参数 */
@@ -230,7 +252,13 @@ export class OpenAIClient {
     };
     const thinkBody = this.buildThinkingBody(this.compThinkFmt, false);
     if (thinkBody) Object.assign(bodyObj, thinkBody);
-    return this.httpPost(this.compBaseUrl, this.compApiKey, 'chat/completions', bodyObj, false, undefined, undefined, 15000);
+    const result = await this.httpPost(this.compBaseUrl, this.compApiKey, 'chat/completions', bodyObj, false, undefined, undefined, 15000);
+    // 触发 token 统计
+    if (this._onTokenCount) {
+      const promptText = request.messages.map(m => m.content).join('');
+      this._onTokenCount(estimateTokens(promptText), estimateTokens(result));
+    }
+    return result;
   }
 
   /**
@@ -251,7 +279,18 @@ export class OpenAIClient {
     };
     const thinkBody = this.buildThinkingBody(this.chatThinkFmt, this.chatThink);
     if (thinkBody) Object.assign(bodyObj, thinkBody);
-    await this.httpPost(this.chatBaseUrl, this.chatApiKey, 'chat/completions', bodyObj, true, onChunk, abortSignal, 60000);
+    // 包装回调以累积完整输出
+    let full = '';
+    const wrappedChunk: StreamChunkCallback = (content) => {
+      full += content;
+      onChunk(content);
+    };
+    await this.httpPost(this.chatBaseUrl, this.chatApiKey, 'chat/completions', bodyObj, true, wrappedChunk, abortSignal, 60000);
+    // 触发 token 统计
+    if (this._onTokenCount) {
+      const promptText = request.messages.map(m => m.content).join('');
+      this._onTokenCount(estimateTokens(promptText), estimateTokens(full));
+    }
   }
 
   // ===== 兼容旧接口（内部委托到上述两个方法）=====

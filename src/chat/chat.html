@@ -191,6 +191,39 @@
       cursor: pointer; font-size: 12px; padding: 2px 6px; border-radius: 3px;
     }
     .copy-btn:hover { background: var(--ai-bubble); color: var(--text-primary); }
+
+    /* Token 统计面板 */
+    .stats-panel {
+      border-top: 1px solid var(--border-color);
+      background: var(--bg-secondary);
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+    .stats-header {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 16px; cursor: pointer; user-select: none;
+      font-size: 12px; color: var(--text-secondary);
+    }
+    .stats-header:hover { background: var(--border-color); }
+    .stats-arrow { font-size: 10px; transition: transform 0.2s; }
+    .stats-title { font-weight: 600; }
+    .stats-summary { margin-left: auto; color: var(--text-primary); opacity: 0.7; }
+    .stats-body { display: none; padding: 0 16px 10px; }
+    .stats-panel.expanded .stats-body { display: block; }
+    .stats-panel.expanded .stats-arrow { transform: rotate(90deg); }
+    .stats-grid {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 6px; margin-bottom: 6px;
+    }
+    .stats-item {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 4px 8px; background: var(--bg-primary); border-radius: 4px;
+      font-size: 11px;
+    }
+    .stats-label { color: var(--text-secondary); }
+    .stats-value { font-weight: 600; color: var(--text-primary); }
+    .stats-timer { font-size: 10px; color: var(--text-secondary); text-align: right; }
+
     .input-container {
       padding: 12px 16px; border-top: 1px solid var(--border-color);
       background: var(--bg-secondary); flex-shrink: 0;
@@ -716,6 +749,44 @@
   </div>
 
   <div id="errorContainer"></div>
+
+  <!-- Token 统计面板（可折叠） -->
+  <div class="stats-panel collapsed" id="statsPanel">
+    <div class="stats-header" id="statsHeader">
+      <span class="stats-arrow" id="statsArrow">▶</span>
+      <span class="stats-title">📊 Token 统计</span>
+      <span class="stats-summary" id="statsSummary">--</span>
+    </div>
+    <div class="stats-body" id="statsBody">
+      <div class="stats-grid">
+        <div class="stats-item">
+          <span class="stats-label">对话请求</span>
+          <span class="stats-value" id="statChatRequests">0</span>
+        </div>
+        <div class="stats-item">
+          <span class="stats-label">对话 Token</span>
+          <span class="stats-value" id="statChatTokens">0</span>
+        </div>
+        <div class="stats-item">
+          <span class="stats-label">补全请求</span>
+          <span class="stats-value" id="statCompRequests">0</span>
+        </div>
+        <div class="stats-item">
+          <span class="stats-label">补全 Token</span>
+          <span class="stats-value" id="statCompTokens">0</span>
+        </div>
+        <div class="stats-item">
+          <span class="stats-label">缓存命中率</span>
+          <span class="stats-value" id="statCacheRate">0%</span>
+        </div>
+        <div class="stats-item">
+          <span class="stats-label">总计</span>
+          <span class="stats-value" id="statTotalTokens">0</span>
+        </div>
+      </div>
+      <div class="stats-timer" id="statsTimer">运行时间: 0 分钟</div>
+    </div>
+  </div>
 
   <div class="input-container">
     <!-- 文件附件区域（多文件标签列表） -->

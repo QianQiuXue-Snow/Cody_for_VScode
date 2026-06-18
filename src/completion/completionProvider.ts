@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { openAIClient } from '../api/openaiClient';
 import { Settings } from '../config/settings';
 import { cleanCompletion } from './completionCleaner';
+import { ChatPanelProvider } from '../chat/chatPanel';
 
 // 兼容 VSCode <1.68
 const _v = vscode as any;
@@ -117,6 +118,8 @@ export class CompletionProvider {
       const codeAfter = document.getText(new vscode.Range(position, endPos));
 
       if (token.isCancellationRequested) return [];
+
+      ChatPanelProvider.instance?.reportCompRequest();
 
       const completion = await this.withTimeout(
         openAIClient.getCompletion(codeBefore, codeAfter, language),

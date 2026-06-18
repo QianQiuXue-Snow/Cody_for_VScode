@@ -40,6 +40,19 @@ var setAgentMaxTokens = document.getElementById('setAgentMaxTokens');
 var setAgentTemperature = document.getElementById('setAgentTemperature');
 var editModeBadge = document.getElementById('editModeBadge');
 var rollbackBtn = document.getElementById('rollbackBtn');
+
+// Token 统计面板元素
+var statsPanel = document.getElementById('statsPanel');
+var statsHeader = document.getElementById('statsHeader');
+var statsArrow = document.getElementById('statsArrow');
+var statsSummary = document.getElementById('statsSummary');
+var statChatRequests = document.getElementById('statChatRequests');
+var statChatTokens = document.getElementById('statChatTokens');
+var statCompRequests = document.getElementById('statCompRequests');
+var statCompTokens = document.getElementById('statCompTokens');
+var statCacheRate = document.getElementById('statCacheRate');
+var statTotalTokens = document.getElementById('statTotalTokens');
+var statsTimer = document.getElementById('statsTimer');
 var approvalContainer = document.getElementById('approvalContainer');
 var confirmOverlay = document.getElementById('confirmOverlay');
 var confirmTempList = document.getElementById('confirmTempList');
@@ -216,6 +229,9 @@ window.addEventListener('message', function(event) {
           updateStatus();
         }
       }
+      break;
+    case 'tokenStats':
+      updateTokenStats(message);
       break;
     case 'skillsLoaded':
       renderSkillsList(message.skills || []);
@@ -887,6 +903,41 @@ clearCurrentModeMessages = function() {
   origClearMessages();
   resetAgentUI();
 };
+
+// ========== Token 统计面板 ==========
+
+/** 展开/收起统计面板 */
+statsHeader.addEventListener('click', function() {
+  if (statsPanel.classList.contains('expanded')) {
+    statsPanel.classList.remove('expanded');
+    statsArrow.textContent = '▶';
+  } else {
+    statsPanel.classList.add('expanded');
+    statsArrow.textContent = '▼';
+  }
+});
+
+/** 更新统计面板数据 */
+function updateTokenStats(data) {
+  statChatRequests.textContent = data.chatRequests || 0;
+  statCompRequests.textContent = data.compRequests || 0;
+  var chatTok = (data.promptTokens || 0) + (data.completionTokens || 0);
+  statChatTokens.textContent = formatNumber(chatTok);
+  var compTok = (data.compPromptTokens || 0) + (data.compCompletionTokens || 0);
+  statCompTokens.textContent = formatNumber(compTok);
+  statCacheRate.textContent = (data.cacheRate || 0) + '%';
+  statTotalTokens.textContent = formatNumber(data.totalTokens || 0);
+  statsTimer.textContent = '运行时间: ' + (data.elapsedMin || 0) + ' 分钟';
+
+  // 头部摘要
+  statsSummary.textContent = '📤' + formatNumber(chatTok) + ' 📋' + formatNumber(compTok) + ' 🎯' + (data.cacheRate || 0) + '%';
+}
+
+function formatNumber(n) {
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+  if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+  return String(n);
+}
 
 updateStatus();
 

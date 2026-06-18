@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { openAIClient, ChatMessage } from '../api/openaiClient';
+import { openAIClient, ChatMessage, estimateTokens } from '../api/openaiClient';
 import { Settings } from '../config/settings';
 import { getChatWebviewContent } from './webviewContent';
 import {
@@ -20,8 +20,31 @@ import {
 import { SkillManager } from '../skills/skillManager';
 
 const MAX_HISTORY_ROUNDS = 15;
-/** 超过此长度时写入临时文件 */
+/** 写入临时文件的最小字符数 */
 const TEMPFILE_THRESHOLD = 15000;
+
+// ========== Token 统计 ==========
+
+interface TokenStats {
+  /** 对话总 prompt tokens */
+  promptTokens: number;
+  /** 对话总 completion tokens */
+  completionTokens: number;
+  /** 补全总 prompt tokens */
+  compPromptTokens: number;
+  /** 补全总 completion tokens */
+  compCompletionTokens: number;
+  /** 对话请求次数 */
+  chatRequests: number;
+  /** 补全请求次数 */
+  compRequests: number;
+  /** 补全缓存命中次数 */
+  compCacheHits: number;
+  /** 补全总触发次数（含命中+未命中） */
+  compTotal: number;
+  /** 首次请求时间戳 */
+  startedAt: number;
+}
 
 /** 推荐默认值（与 package.json 对齐） */
 const DEFAULTS = {
@@ -45,6 +68,8 @@ type ChatMode = 'assistant' | 'agent';
 
 export class ChatPanelProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'aiAssistant.chatView';
+  /** 全局单例，供补全 Provider 报告缓存统计 */
+  static instance: ChatPanelProvider | null = null;
 
   private _view?: vscode.WebviewView;
   private _extensionUri: vscode.Uri;
@@ -62,12 +87,21 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
   /** 临时文件追踪 */
   private tempFiles: Set<string> = new Set();
   private tempDir: string = '';
+  /** Token 统计 */
+  private stats: TokenStats = {
+    promptTokens: 0, completionTokens: 0,
+    compPromptTokens: 0, compCompletionTokens: 0,
+    chatRequests: 0, compRequests: 0,
+    compCacheHits: 0, compTotal: 0,
+    startedAt: Date.now(),
+  };
 
   constructor(
     private readonly _context: vscode.ExtensionContext,
     private readonly skillManager: SkillManager
   ) {
     this._extensionUri = _context.extensionUri;
+    ChatPanelProvider.instance = this;
   }
 
   resolveWebviewView(
@@ -77,6 +111,13 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
   ): void {
     this._view = webviewView;
     webviewView.webview.options = { enableScripts: true, localResourceRoots: [this._extensionUri] };
+    // 注册 token 统计回调
+    openAIClient.setTokenCallback((prompt, comp) => {
+      this.stats.chatRequests++;
+      this.stats.promptTokens += prompt;
+      this.stats.completionTokens += comp;
+      this.sendTokenStats();
+    });
 
     // 初始化临时文件目录
     const ws = vscode.workspace.workspaceFolders;
@@ -719,6 +760,43 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
 
   private postMessage(command: string, data: any): void {
     if (this._view) this._view.webview.postMessage({ command, ...data });
+  }
+
+  /** 发送 token 统计到 webview */
+  private sendTokenStats(): void {
+    const elapsed = Date.now() - this.stats.startedAt;
+    const totalTokens = this.stats.promptTokens + this.stats.completionTokens
+      + this.stats.compPromptTokens + this.stats.compCompletionTokens;
+    const cacheRate = this.stats.compTotal > 0
+      ? Math.round((this.stats.compCacheHits / this.stats.compTotal) * 100)
+      : 0;
+    const elapsedMin = Math.floor(elapsed / 60000);
+
+    this.postMessage('tokenStats', {
+      ...this.stats,
+      totalTokens,
+      cacheRate,
+      elapsedMin,
+    });
+  }
+
+  /** 外部（补全 Provider）报告补全请求触发 */
+  reportCompRequest(): void {
+    this.stats.compTotal++;
+    this.stats.compPromptTokens += estimateTokens(
+      Settings.completionModel + Settings.completionApiBaseUrl
+    );
+  }
+
+  /** 外部（补全 Provider）报告缓存命中 */
+  reportCompCacheHit(): void {
+    this.stats.compCacheHits++;
+    this.sendTokenStats();
+  }
+
+  /** 获取 stats 供外部读取 */
+  getStats(): Readonly<TokenStats> {
+    return this.stats;
   }
 
   /** 分片发送超长文本到 streamChunk，避免单条 postMessage 数据量过大导致截断 */

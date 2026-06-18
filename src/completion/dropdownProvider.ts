@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { openAIClient } from '../api/openaiClient';
 import { Settings } from '../config/settings';
 import { cleanCompletion } from './completionCleaner';
+import { ChatPanelProvider } from '../chat/chatPanel';
 
 /**
  * 下拉补全 Provider（本地毫秒出 + 后台 AI 无缝替换）
@@ -37,6 +38,7 @@ export class DropdownCompletionProvider implements vscode.CompletionItemProvider
     // 2. AI 缓存命中 → 直接返回
     const aiItems = this.aiCache.get(prefix);
     if (aiItems) {
+      ChatPanelProvider.instance?.reportCompCacheHit();
       const result = [...aiItems];
       if (localItems.length > 0) {
         const sep = new vscode.CompletionItem('- 本地匹配 -', vscode.CompletionItemKind.Text);
@@ -123,6 +125,7 @@ export class DropdownCompletionProvider implements vscode.CompletionItemProvider
     // 新前缀 → 递增 generation，作废所有旧请求
     this.pendingAiPrefix = prefix;
     const gen = ++this.aiGeneration;
+    ChatPanelProvider.instance?.reportCompRequest();
 
     const language = document.languageId || 'plaintext';
 
