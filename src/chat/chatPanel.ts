@@ -185,8 +185,8 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     const userContent = this.buildUserContent(text, attachedFiles);
 
     if (mode === 'assistant') {
-      this.assistantHistory = [];
       this.assistantHistory.push({ role: 'user', content: userContent });
+      this.trimChatHistory();
     } else {
       // Agent 模式（Cody）
       this.agentHistory.push({ role: 'user', content: userContent });
@@ -656,7 +656,8 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
 
   private trimChatHistory(): void {
     const max = MAX_HISTORY_ROUNDS * 2;
-    if (this.agentHistory.length > max) this.agentHistory = this.agentHistory.slice(-max);
+    const history = this.getCurrentHistory();
+    if (history.length > max) this.setCurrentHistory(history.slice(-max));
   }
 
   private handleGetSettings(): void {
