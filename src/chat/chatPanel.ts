@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { openAIClient, ChatMessage, estimateTokens } from '../api/openaiClient';
+import { openAIClient, ChatMessage } from '../api/openaiClient';
 import { Settings } from '../config/settings';
 import { getChatWebviewContent } from './webviewContent';
 import {
@@ -783,9 +783,6 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
   /** 外部（补全 Provider）报告补全请求触发 */
   reportCompRequest(): void {
     this.stats.compTotal++;
-    this.stats.compPromptTokens += estimateTokens(
-      Settings.completionModel + Settings.completionApiBaseUrl
-    );
   }
 
   /** 外部（补全 Provider）报告缓存命中 */

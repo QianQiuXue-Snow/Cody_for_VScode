@@ -253,11 +253,6 @@ export class OpenAIClient {
     const thinkBody = this.buildThinkingBody(this.compThinkFmt, false);
     if (thinkBody) Object.assign(bodyObj, thinkBody);
     const result = await this.httpPost(this.compBaseUrl, this.compApiKey, 'chat/completions', bodyObj, false, undefined, undefined, 15000);
-    // 触发 token 统计
-    if (this._onTokenCount) {
-      const promptText = request.messages.map(m => m.content).join('');
-      this._onTokenCount(estimateTokens(promptText), estimateTokens(result));
-    }
     return result;
   }
 

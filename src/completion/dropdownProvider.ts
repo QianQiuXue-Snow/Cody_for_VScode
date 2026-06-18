@@ -38,6 +38,7 @@ export class DropdownCompletionProvider implements vscode.CompletionItemProvider
     // 2. AI 缓存命中 → 直接返回
     const aiItems = this.aiCache.get(prefix);
     if (aiItems) {
+      ChatPanelProvider.instance?.reportCompRequest();
       ChatPanelProvider.instance?.reportCompCacheHit();
       const result = [...aiItems];
       if (localItems.length > 0) {
