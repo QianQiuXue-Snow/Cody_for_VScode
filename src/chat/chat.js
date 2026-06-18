@@ -922,23 +922,23 @@ statsHeader.addEventListener('click', function() {
 /** 更新统计面板数据 */
 function updateTokenStats(data) {
   statChatRequests.textContent = data.chatRequests || 0;
+  statCacheRate.textContent = (data.cacheRate || 0) + '%';
   statCached.textContent = formatNumber(data.cachedPromptTokens || 0);
   statUncached.textContent = formatNumber(data.uncachedPromptTokens || 0);
   statCompletion.textContent = formatNumber(data.completionTokens || 0);
   statCompRequests.textContent = data.compRequests || 0;
   var compTok = (data.compPromptTokens || 0) + (data.compCompletionTokens || 0);
   statCompTokens.textContent = formatNumber(compTok);
-  statCacheRate.textContent = (data.cacheRate || 0) + '%';
   statTotalTokens.textContent = formatNumber(data.totalTokens || 0);
   statsTimer.textContent = '运行时间: ' + (data.elapsedMin || 0) + ' 分钟';
 
-  // 头部摘要：缓存命中↘未命中↘ 输出↗ 补全📋 命中率🎯
+  // 头部摘要：命中率🎯 缓存↘未命中↘ 输出↗ 补全📋
   statsSummary.textContent =
-    '↘' + formatNumber(data.cachedPromptTokens || 0) +
+    '🎯' + (data.cacheRate || 0) + '%' +
+    ' ↘' + formatNumber(data.cachedPromptTokens || 0) +
     '/' + formatNumber(data.uncachedPromptTokens || 0) +
     ' ↗' + formatNumber(data.completionTokens || 0) +
-    ' 📋' + formatNumber(compTok) +
-    ' 🎯' + (data.cacheRate || 0) + '%';
+    ' 📋' + formatNumber(compTok);
 }
 
 function formatNumber(n) {

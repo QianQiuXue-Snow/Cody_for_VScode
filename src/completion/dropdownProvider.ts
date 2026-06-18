@@ -39,7 +39,6 @@ export class DropdownCompletionProvider implements vscode.CompletionItemProvider
     const aiItems = this.aiCache.get(prefix);
     if (aiItems) {
       ChatPanelProvider.instance?.reportCompRequest();
-      ChatPanelProvider.instance?.reportCompCacheHit();
       const result = [...aiItems];
       if (localItems.length > 0) {
         const sep = new vscode.CompletionItem('- 本地匹配 -', vscode.CompletionItemKind.Text);

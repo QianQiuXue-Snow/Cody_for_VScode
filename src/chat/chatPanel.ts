@@ -41,10 +41,6 @@ interface TokenStats {
   chatRequests: number;
   /** 补全请求次数 */
   compRequests: number;
-  /** 补全缓存命中次数 */
-  compCacheHits: number;
-  /** 补全总触发次数（含命中+未命中） */
-  compTotal: number;
   /** 首次请求时间戳 */
   startedAt: number;
 }
@@ -95,7 +91,6 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     cachedPromptTokens: 0, uncachedPromptTokens: 0, completionTokens: 0,
     compPromptTokens: 0, compCompletionTokens: 0,
     chatRequests: 0, compRequests: 0,
-    compCacheHits: 0, compTotal: 0,
     startedAt: Date.now(),
   };
 
@@ -786,8 +781,9 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
     const chatIn = this.stats.cachedPromptTokens + this.stats.uncachedPromptTokens;
     const totalTokens = chatIn + this.stats.completionTokens
       + this.stats.compPromptTokens + this.stats.compCompletionTokens;
-    const cacheRate = this.stats.compTotal > 0
-      ? Math.round((this.stats.compCacheHits / this.stats.compTotal) * 100)
+    // 缓存命中率 = 系统 Prompt (可缓存) / 对话输入总量
+    const cacheRate = chatIn > 0
+      ? Math.round((this.stats.cachedPromptTokens / chatIn) * 100)
       : 0;
     const elapsedMin = Math.floor(elapsed / 60000);
 
@@ -801,13 +797,7 @@ export class ChatPanelProvider implements vscode.WebviewViewProvider {
 
   /** 外部（补全 Provider）报告补全请求触发 */
   reportCompRequest(): void {
-    this.stats.compTotal++;
-  }
-
-  /** 外部（补全 Provider）报告缓存命中 */
-  reportCompCacheHit(): void {
-    this.stats.compCacheHits++;
-    this.sendTokenStats();
+    this.stats.compRequests++;
   }
 
   /** 获取 stats 供外部读取 */
